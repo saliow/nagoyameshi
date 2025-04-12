@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,37 +23,46 @@ import com.example.nagoyameshi.repository.RestaurantRepository;
 @Service
 public class RestaurantService {
 	private final RestaurantRepository restaurantRepository;
-	
-	public RestaurantService(RestaurantRepository restaurantRepository) {
+	private final CategoryRestaurantService categoryRestaurantService;
+
+	public RestaurantService(RestaurantRepository restaurantRepository,
+			CategoryRestaurantService categoryRestaurantService) {
 		this.restaurantRepository = restaurantRepository;
+		this.categoryRestaurantService = categoryRestaurantService;
 	}
-	
+
 	//すべての店舗をページングされた状態で取得する。
 	public Page<Restaurant> findAllRestaurants(Pageable pageable) {
 		return restaurantRepository.findAll(pageable);
 	}
+
 	//指定されたキーワードを店舗名に含む店舗を、ページングされた状態で取得する。
 	public Page<Restaurant> findRestaurantsByNameLike(String keyword, Pageable pageable) {
 		return restaurantRepository.findByNameLike("%" + keyword + "%", pageable);
 	}
+
 	//指定したidを持つ店舗を取得する。
 	public Optional<Restaurant> findRestaurantById(Integer id) {
 		return restaurantRepository.findById(id);
 	}
+
 	//店舗のレコード数を取得する。
 	public long countRestaurants() {
 		return restaurantRepository.count();
 	}
+
 	//idが最も大きい店舗を取得する。
 	public Restaurant findFirstRestaurantByOrderByIdDesc() {
 		return restaurantRepository.findFirstByOrderByIdDesc();
 	}
+
 	//フォームから送信された店舗情報をデータベースに登録する。
 	@Transactional
 	public void createRestaurant(RestaurantRegisterForm restaurantRegisterForm) {
 		Restaurant restaurant = new Restaurant();
 		MultipartFile imageFile = restaurantRegisterForm.getImageFile();
-		
+		List<Integer> categoryIds = restaurantRegisterForm.getCategoryIds();
+
 		if (!imageFile.isEmpty()) {
 			String imageName = imageFile.getOriginalFilename();
 			String hashedImageName = generateNewFileName(imageName);
@@ -60,7 +70,7 @@ public class RestaurantService {
 			copyImageFile(imageFile, filePath);
 			restaurant.setImage(hashedImageName);
 		}
-		
+
 		restaurant.setName(restaurantRegisterForm.getName());
 		restaurant.setDescription(restaurantRegisterForm.getDescription());
 		restaurant.setLowestPrice(restaurantRegisterForm.getLowestPrice());
@@ -70,14 +80,20 @@ public class RestaurantService {
 		restaurant.setOpeningTime(restaurantRegisterForm.getOpeningTime());
 		restaurant.setClosingTime(restaurantRegisterForm.getClosingTime());
 		restaurant.setSeatingCapacity(restaurantRegisterForm.getSeatingCapacity());
-		
+
 		restaurantRepository.save(restaurant);
+
+		if (categoryIds != null) {
+			categoryRestaurantService.createCategoriesRestaurants(categoryIds, restaurant);
+		}
 	}
+
 	//フォームから送信された店舗情報でデータベースを更新する。
 	@Transactional
 	public void updateRestaurant(RestaurantEditForm restaurantEditForm, Restaurant restaurant) {
 		MultipartFile imageFile = restaurantEditForm.getImageFile();
-		
+		List<Integer> categoryIds = restaurantEditForm.getCategoryIds();
+
 		if (!imageFile.isEmpty()) {
 			String imageName = imageFile.getOriginalFilename();
 			String hashedImageName = generateNewFileName(imageName);
@@ -85,7 +101,7 @@ public class RestaurantService {
 			copyImageFile(imageFile, filePath);
 			restaurant.setImage(hashedImageName);
 		}
-		
+
 		restaurant.setName(restaurantEditForm.getName());
 		restaurant.setDescription(restaurantEditForm.getDescription());
 		restaurant.setLowestPrice(restaurantEditForm.getLowestPrice());
@@ -95,25 +111,30 @@ public class RestaurantService {
 		restaurant.setOpeningTime(restaurantEditForm.getOpeningTime());
 		restaurant.setClosingTime(restaurantEditForm.getClosingTime());
 		restaurant.setSeatingCapacity(restaurantEditForm.getSeatingCapacity());
-		
+
 		restaurantRepository.save(restaurant);
+
+		categoryRestaurantService.syncCategoriesRestaurants(categoryIds, restaurant);
 	}
+
 	//指定した店舗をデータベースから削除する。
 	@Transactional
 	public void deleteRestaurant(Restaurant restaurant) {
 		restaurantRepository.delete(restaurant);
 	}
+
 	//UUIDを使って生成したファイル名を返す。
 	public String generateNewFileName(String fileName) {
 		String[] fileNames = fileName.split("\\.");
-		
+
 		for (int i = 0; i < fileNames.length - 1; i++) {
 			fileNames[i] = UUID.randomUUID().toString();
 		}
 		String hashedFileName = String.join(".", fileNames);
-		
+
 		return hashedFileName;
 	}
+
 	//画像ファイルを指定したファイルにコピーする。
 	public void copyImageFile(MultipartFile imageFile, Path filePath) {
 		try {
@@ -122,10 +143,12 @@ public class RestaurantService {
 			e.printStackTrace();
 		}
 	}
+
 	//価格が正しく設定されているかどうか（最高価格が最低価格以上かどうか）をチェックする。
 	public boolean isValidPrices(Integer lowestPrice, Integer highestPrice) {
 		return highestPrice >= lowestPrice;
 	}
+
 	//営業時間が正しく設定されているかどうか（閉店時間が開店時間よりも後かどうか）をチェックする。
 	public boolean isValidBusinessHours(LocalTime openingTime, LocalTime closingTime) {
 		return closingTime.isAfter(openingTime);
