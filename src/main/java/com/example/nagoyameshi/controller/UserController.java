@@ -48,8 +48,8 @@ public class UserController {
 
 		UserEditForm userEditForm = new UserEditForm(user.getName(),
 				user.getFurigana(),
-				user.getAddress(),
 				user.getPostalCode(),
+				user.getAddress(),
 				user.getPhoneNumber(),
 				birthday,
 				user.getOccupation(),
